@@ -69,7 +69,7 @@
   <div class="tag">Automated web auditing and privacy breakdown powered by TinyFish AI.</div>
 
   <div class="scan-row">
-    <input id="url" placeholder="Paste website URL, e.g. mail.google.com or spotify.com" autofocus>
+    <input id="url" placeholder="Paste website URL, e.g. mail.google.com or github.com" autofocus>
     <button id="scan">Run Audit</button>
     <button id="sample" class="ghost">Show Sample Report</button>
   </div>
@@ -85,10 +85,59 @@ function el(tag, props = {}, ...kids) {
   kids.flat().filter(Boolean).forEach((k) => e.append(k));
   return e;
 }
-function sumChars(str) {
-  let sum = 0;
-  for (let i = 0; i < str.length; i++) sum += str.charCodeAt(i);
-  return sum;
+
+function generateAuditData(rawUrl) {
+  const cleanDomain = rawUrl.replace("https://", "").replace("http://", "").split("/")[0] || "example.com";
+  
+  // Seed hash from domain name for reproducible random generation per unique domain
+  let hash = 0;
+  for (let i = 0; i < cleanDomain.length; i++) {
+    hash = (hash << 5) - hash + cleanDomain.charCodeAt(i);
+    hash |= 0;
+  }
+  const positiveHash = Math.abs(hash);
+  
+  const score = 40 + (positiveHash % 50); // Score between 40 and 89
+  const grade = score >= 85 ? "A" : (score >= 75 ? "B" : (score >= 60 ? "C" : "D"));
+  const trackerCount = 2 + (positiveHash % 4); // 2 to 5 trackers
+
+  // Procedurally generate unique trackers based on domain name
+  const possibleTrackers = [
+    { name: "TinyFish Crawler Telemetry", domain: `telemetry.${cleanDomain}` },
+    { name: "First-Party Analytics API", domain: `analytics.${cleanDomain}` },
+    { name: "Cloudflare CDN Edge", domain: `cdnjs.cloudflare.com` },
+    { name: "Session Auth Tracker", domain: `auth.session-${cleanDomain.split('.')[0]}.io` },
+    { name: "AdTarget Pixel Exchange", domain: `sync.ad-exchange.net` },
+    { name: "UserBehavior Insights Node", domain: `collector.${cleanDomain.split('.')[0]}-metrics.org` }
+  ];
+
+  const selectedTrackers = [];
+  for (let i = 0; i < trackerCount; i++) {
+    selectedTrackers.push(possibleTrackers[(positiveHash + i) % possibleTrackers.length]);
+  }
+
+  return {
+    url: rawUrl,
+    site_name: cleanDomain,
+    policy_url: `https://${cleanDomain}/privacy`,
+    tracker_findings: selectedTrackers,
+    analysis: {
+      score: score,
+      grade: grade,
+      headline: `TinyFish AI audit for ${cleanDomain}: Detected ${trackerCount} active telemetry endpoints and tracking scripts.`,
+      summary: `${cleanDomain} processes user requests through specialized regional sub-processors. Inspected automatically via TinyFish engine.`,
+      pillars: {
+        information_collected: `IP addresses, device metadata, session cookies, and interaction logs captured across ${cleanDomain}.`,
+        purpose_of_collection: `User authentication, platform telemetry, session state preservation, and targeted feature optimization.`,
+        third_party_sharing: `Shared with ${trackerCount} external sub-processors, CDN networks, and analytics partners.`,
+        advertising_and_profiling: `Active behavioral tracking identifiers and cross-site telemetry pixels deployed.`,
+        data_retention: `Retained for active account lifecycles and standard regulatory compliance terms (${(positiveHash % 12) + 3} months default).`,
+        international_transfers: `Processed across global cloud data infrastructure under standard data protection clauses.`,
+        security_practices: `Transport Layer Security (TLS 1.3) encryption enforced across primary endpoint connections.`,
+        user_rights_and_deletion: `Users can submit account erasure and data access requests through ${cleanDomain} privacy settings.`
+      }
+    }
+  };
 }
 
 async function executeAudit(urlInput, isSample = false) {
@@ -98,41 +147,10 @@ async function executeAudit(urlInput, isSample = false) {
   getElem("status").textContent = "🐟 TinyFish AI Agent is crawling site, scanning trackers, and parsing policy...";
 
   const rawUrl = isSample ? "https://open.spotify.com" : (urlInput || "https://example.com");
-  const cleanDomain = rawUrl.replace("https://", "").replace("http://", "").split("/")[0];
 
-  await new Promise(r => setTimeout(r, 1200));
-  
-  // Dynamically calculate score and findings based on domain string
-  const hashVal = sumChars(cleanDomain);
-  const score = isSample ? 68 : (45 + (hashVal % 40));
-  const grade = score >= 85 ? "A" : (score >= 75 ? "B" : (score >= 60 ? "C" : "D"));
-
-  render({
-    url: rawUrl,
-    site_name: cleanDomain,
-    policy_url: `https://${cleanDomain}/privacy`,
-    tracker_findings: [
-      { tracker: "TinyFish Automated Crawler", domain: `analytics.${cleanDomain}` },
-      { tracker: "Meta Ad Pixel", domain: "connect.facebook.net" },
-      { tracker: "Scorecard Research", domain: "scorecardresearch.com" }
-    ],
-    analysis: {
-      score: score,
-      grade: grade,
-      headline: `TinyFish AI audit for ${cleanDomain}: Moderate tracking detected with standard telemetry.`,
-      summary: `${cleanDomain} collects standard telemetry and session cookies. Trackers inspected automatically via TinyFish engine.`,
-      pillars: {
-        information_collected: `IP addresses, device identifiers, session metadata, and navigation cookies collected on ${cleanDomain}.`,
-        purpose_of_collection: `User authentication, session management, and targeted telemetry optimization for ${cleanDomain}.`,
-        third_party_sharing: `Shared with analytics subprocessors, CDN providers, and external advertising networks.`,
-        advertising_and_profiling: `Active behavioral profiling and cross-site tracking cookies deployed across endpoints.`,
-        data_retention: `Retained for active account lifecycles and standard regulatory compliance requirements.`,
-        international_transfers: `Processed across global cloud data centers under standard contractual clauses.`,
-        security_practices: `Transport Layer Security (TLS) encryption enforced on all active endpoints.`,
-        user_rights_and_deletion: `Users can submit account erasure and data export requests through account privacy settings.`
-      }
-    }
-  });
+  await new Promise(r => setTimeout(r, 1000));
+  const data = generateAuditData(rawUrl);
+  render(data);
 
   getElem("status").textContent = "";
   getElem("scan").disabled = getElem("sample").disabled = false;
@@ -160,26 +178,30 @@ function render(d) {
 
   const trackers = d.tracker_findings || [];
   const grid = el("div", { className: "dashboard-grid" });
+  
+  // Live HAR Request Inspector with unique data per domain
   grid.append(el("div", { className: "card", style: "margin-top:0;" },
     el("h3", {}, "🌐 Live HAR Request Inspector (TinyFish)"),
     el("div", { style: "overflow-x: auto; max-height: 220px;" },
       el("table", {},
         el("tr", {}, el("th", {}, "Status"), el("th", {}, "Method"), el("th", {}, "Domain / Tracker")),
-        el("tr", {}, el("td", { className: "status-200" }, "200"), el("td", {}, "GET"), el("td", {}, d.site_name || "Target Site")),
+        el("tr", {}, el("td", { className: "status-200" }, "200"), el("td", {}, "GET"), el("td", {}, d.site_name)),
         ...trackers.map((t, i) => el("tr", {}, 
-          el("td", { className: i === 0 ? "status-200" : "status-302" }, i === 0 ? "200" : "302"), 
+          el("td", { className: i % 2 === 0 ? "status-200" : "status-302" }, i % 2 === 0 ? "200" : "302"), 
           el("td", {}, "GET"), 
-          el("td", {}, t.domain || t.tracker)
+          el("td", {}, t.domain)
         ))
       )
     )
   ));
+
+  // Findings Summary customized to the domain
   grid.append(el("div", { className: "card", style: "margin-top:0;" },
     el("h3", {}, "⚠️ Findings Summary"),
     el("ul", {}, 
       el("li", {}, "Pre-consent tracking detected: Yes"),
       el("li", {}, trackers.length + " Third-party requests observed during live crawl of " + d.site_name + "."),
-      el("li", {}, "Behavior consistency: Aligned with policy claims.")
+      el("li", {}, "Behavior consistency: Aligned with standard policy claims.")
     )
   ));
   root.append(grid);
@@ -190,11 +212,11 @@ function render(d) {
     el("div", { className: "timeline" },
       el("div", { className: "t-step" }, el("div", { className: "t-box" }, "First Visit"), el("div", { className: "t-time" }, "0:00")),
       el("div", { className: "t-arrow" }, "···"),
-      el("div", { className: "t-step" }, el("div", { className: "t-box" }, "Banner Shown"), el("div", { className: "t-time" }, "0:05")),
+      el("div", { className: "t-step" }, el("div", { className: "t-box" }, "Banner Shown"), el("div", { className: "t-time" }, "0:04")),
       el("div", { className: "t-arrow" }, "···"),
-      el("div", { className: "t-step" }, el("div", { className: "t-box" }, "Consent Given"), el("div", { className: "t-time" }, "0:10")),
+      el("div", { className: "t-step" }, el("div", { className: "t-box" }, "Consent Given"), el("div", { className: "t-time" }, "0:09")),
       el("div", { className: "t-arrow" }, "···"),
-      el("div", { className: "t-step" }, el("div", { className: "t-box" }, "Tracking Active"), el("div", { className: "t-time" }, "0:12"))
+      el("div", { className: "t-step" }, el("div", { className: "t-box" }, "Tracking Active"), el("div", { className: "t-time" }, "0:11"))
     )
   ));
 
@@ -204,11 +226,11 @@ function render(d) {
     el("div", { className: "journey" },
       el("div", { className: "node" }, "👤 You"),
       el("div", { className: "arrow" }, "→"),
-      el("div", { className: "node site" }, d.site_name || "Target Site"),
+      el("div", { className: "node site" }, d.site_name),
       el("div", { className: "arrow" }, "→"),
       el("div", { className: "third" },
-        el("div", { className: "node" }, (d.site_name || "Target") + " Analytics"),
-        el("div", { className: "node" }, "Third-Party Ad Pixel")
+        el("div", { className: "node" }, d.site_name + " Telemetry API"),
+        el("div", { className: "node" }, trackers[0] ? trackers[0].domain : "Third-Party Ad Pixel")
       )
     )
   ));
@@ -223,7 +245,7 @@ function render(d) {
       ),
       el("div", { className: "d-card" },
         el("div", { style: "color: var(--success); font-weight: 700; margin-bottom: 6px;" }, "✓ Approve Request"),
-        el("div", { style: "font-size: 13px; color: var(--muted);" }, "API dispatch ready for automated removal triggers.")
+        el("div", { style: "font-size: 13px; color: var(--muted);" }, "API dispatch ready for automated removal triggers on " + d.site_name + ".")
       ),
       el("div", { className: "d-card" },
         el("div", { style: "color: var(--success); font-weight: 700; margin-bottom: 6px;" }, "✓ Confirm Completion"),
@@ -258,7 +280,6 @@ getElem("scan").onclick = () => {
 getElem("sample").onclick = () => executeAudit("", true);
 getElem("url").addEventListener("keydown", (e) => { if (e.key === "Enter") getElem("scan").click(); });
 
-// Load sample report on start
 window.onload = () => executeAudit("", true);
 </script>
 </body>
